@@ -9,7 +9,7 @@ import {
   generateMessages,
   bulkImportLeads,
   verifyEmails,
-} from '../controllers/leadsController'
+} from '../controllers/leads'
 
 const router = Router()
 
