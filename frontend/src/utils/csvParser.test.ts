@@ -1,5 +1,14 @@
 import { describe, it, expect } from 'vitest'
-import { parseCsv, isValidEmail } from './csvParser'
+import { 
+  parseCsv, 
+  isValidEmail, 
+  ValidationStatus,
+  ERROR_FIRST_NAME_REQUIRED,
+  ERROR_LAST_NAME_REQUIRED,
+  ERROR_EMAIL_REQUIRED,
+  ERROR_INVALID_EMAIL_FORMAT,
+  WARNING_INVALID_COUNTRY_CODE
+} from './csvParser'
 
 describe('isValidEmail', () => {
   it('should return true for valid email addresses', () => {
@@ -64,8 +73,9 @@ John,Doe,john.doe@example.com,Developer,US,Tech Corp`
       jobTitle: 'Developer',
       countryCode: 'US',
       companyName: 'Tech Corp',
-      isValid: true,
+      validationStatus: ValidationStatus.Valid,
       errors: [],
+      warnings: [],
       rowIndex: 2,
     })
   })
@@ -80,14 +90,14 @@ John,Smith,`
 
     expect(result).toHaveLength(3)
 
-    expect(result[0].isValid).toBe(false)
-    expect(result[0].errors).toContain('First name is required')
+    expect(result[0].validationStatus).toBe(ValidationStatus.Invalid)
+    expect(result[0].errors).toContain(ERROR_FIRST_NAME_REQUIRED)
 
-    expect(result[1].isValid).toBe(false)
-    expect(result[1].errors).toContain('Last name is required')
+    expect(result[1].validationStatus).toBe(ValidationStatus.Invalid)
+    expect(result[1].errors).toContain(ERROR_LAST_NAME_REQUIRED)
 
-    expect(result[2].isValid).toBe(false)
-    expect(result[2].errors).toContain('Email is required')
+    expect(result[2].validationStatus).toBe(ValidationStatus.Invalid)
+    expect(result[2].errors).toContain(ERROR_EMAIL_REQUIRED)
   })
 
   it('should validate email format', () => {
@@ -98,9 +108,9 @@ Jane,Smith,jane@example.com`
     const result = parseCsv(csv)
 
     expect(result).toHaveLength(2)
-    expect(result[0].isValid).toBe(false)
-    expect(result[0].errors).toContain('Invalid email format')
-    expect(result[1].isValid).toBe(true)
+    expect(result[0].validationStatus).toBe(ValidationStatus.Invalid)
+    expect(result[0].errors).toContain(ERROR_INVALID_EMAIL_FORMAT)
+    expect(result[1].validationStatus).toBe(ValidationStatus.Valid)
   })
 
   it('should handle CSV with quoted values', () => {
@@ -151,7 +161,7 @@ John,Doe,john@example.com,,`
     expect(result).toHaveLength(1)
     expect(result[0].jobTitle).toBeUndefined()
     expect(result[0].countryCode).toBeUndefined()
-    expect(result[0].isValid).toBe(true)
+    expect(result[0].validationStatus).toBe(ValidationStatus.Valid)
   })
 
   it('should preserve row index correctly', () => {
@@ -175,11 +185,11 @@ Bob,Johnson,bob@example.com`
     const result = parseCsv(csv)
 
     expect(result).toHaveLength(1)
-    expect(result[0].isValid).toBe(false)
+    expect(result[0].validationStatus).toBe(ValidationStatus.Invalid)
     expect(result[0].errors).toHaveLength(3)
-    expect(result[0].errors).toContain('First name is required')
-    expect(result[0].errors).toContain('Last name is required')
-    expect(result[0].errors).toContain('Invalid email format')
+    expect(result[0].errors).toContain(ERROR_FIRST_NAME_REQUIRED)
+    expect(result[0].errors).toContain(ERROR_LAST_NAME_REQUIRED)
+    expect(result[0].errors).toContain(ERROR_INVALID_EMAIL_FORMAT)
   })
 
   it('should handle extra columns not in header mapping', () => {
@@ -192,7 +202,7 @@ John,Doe,john@example.com,someValue`
     expect(result[0].firstName).toBe('John')
     expect(result[0].lastName).toBe('Doe')
     expect(result[0].email).toBe('john@example.com')
-    expect(result[0].isValid).toBe(true)
+    expect(result[0].validationStatus).toBe(ValidationStatus.Valid)
   })
 
   it('should handle mixed valid and invalid leads', () => {
@@ -204,11 +214,11 @@ Jane,Johnson,jane@example.com`
     const result = parseCsv(csv)
 
     expect(result).toHaveLength(3)
-    expect(result[0].isValid).toBe(true)
-    expect(result[1].isValid).toBe(false)
-    expect(result[1].errors).toContain('First name is required')
-    expect(result[1].errors).toContain('Invalid email format')
-    expect(result[2].isValid).toBe(true)
+    expect(result[0].validationStatus).toBe(ValidationStatus.Valid)
+    expect(result[1].validationStatus).toBe(ValidationStatus.Invalid)
+    expect(result[1].errors).toContain(ERROR_FIRST_NAME_REQUIRED)
+    expect(result[1].errors).toContain(ERROR_INVALID_EMAIL_FORMAT)
+    expect(result[2].validationStatus).toBe(ValidationStatus.Valid)
   })
 
   it('should handle whitespace in fields', () => {
@@ -221,6 +231,74 @@ Jane,Johnson,jane@example.com`
     expect(result[0].firstName).toBe('John')
     expect(result[0].lastName).toBe('Doe')
     expect(result[0].email).toBe('john@example.com')
-    expect(result[0].isValid).toBe(true)
+    expect(result[0].validationStatus).toBe(ValidationStatus.Valid)
+  })
+
+  it('should validate country codes correctly', () => {
+    const csv = `firstName,lastName,email,countryCode
+John,Doe,john@example.com,US
+Jane,Smith,jane@example.com,GB
+Bob,Johnson,bob@example.com,INVALID
+Alice,Williams,alice@example.com,840
+Charlie,Brown,charlie@example.com,`
+
+    const result = parseCsv(csv)
+
+    expect(result).toHaveLength(5)
+    
+    // Valid country codes (US, GB, numeric 840 for US)
+    expect(result[0].validationStatus).toBe(ValidationStatus.Valid)
+    expect(result[0].warnings).not.toContain(WARNING_INVALID_COUNTRY_CODE)
+    
+    expect(result[1].validationStatus).toBe(ValidationStatus.Valid)
+    expect(result[1].warnings).not.toContain(WARNING_INVALID_COUNTRY_CODE)
+    
+    expect(result[3].validationStatus).toBe(ValidationStatus.Valid)
+    expect(result[3].warnings).not.toContain(WARNING_INVALID_COUNTRY_CODE)
+    
+    // Invalid country code - should be warning status
+    expect(result[2].validationStatus).toBe(ValidationStatus.Warning)
+    expect(result[2].warnings).toContain(WARNING_INVALID_COUNTRY_CODE)
+    
+    // Empty country code should be valid (optional field)
+    expect(result[4].validationStatus).toBe(ValidationStatus.Valid)
+    expect(result[4].warnings).not.toContain(WARNING_INVALID_COUNTRY_CODE)
+  })
+
+  it('should handle alpha-3 country codes', () => {
+    const csv = `firstName,lastName,email,countryCode
+John,Doe,john@example.com,USA
+Jane,Smith,jane@example.com,GBR`
+
+    const result = parseCsv(csv)
+
+    expect(result).toHaveLength(2)
+    
+    // Valid alpha-3 codes
+    expect(result[0].validationStatus).toBe(ValidationStatus.Valid)
+    expect(result[0].warnings).not.toContain(WARNING_INVALID_COUNTRY_CODE)
+    
+    expect(result[1].validationStatus).toBe(ValidationStatus.Valid)
+    expect(result[1].warnings).not.toContain(WARNING_INVALID_COUNTRY_CODE)
+  })
+
+  it('should be invalid if country code is invalid and required field is invalid', () => {
+    const csv = `firstName,lastName,email,countryCode
+John,Doe,john@examplecom,XXX
+John,,john@example.com,XXX
+,Smith,jane@example.com,XXX`
+
+    const result = parseCsv(csv)
+
+    expect(result).toHaveLength(3)
+    
+    expect(result[0].validationStatus).toBe(ValidationStatus.Invalid)
+    expect(result[0].warnings).toContain(WARNING_INVALID_COUNTRY_CODE)
+    
+    expect(result[1].validationStatus).toBe(ValidationStatus.Invalid)
+    expect(result[1].warnings).toContain(WARNING_INVALID_COUNTRY_CODE)
+
+    expect(result[0].validationStatus).toBe(ValidationStatus.Invalid)
+    expect(result[0].warnings).toContain(WARNING_INVALID_COUNTRY_CODE)
   })
 })
